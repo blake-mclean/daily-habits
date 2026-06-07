@@ -1,7 +1,6 @@
 import 'react-native-gesture-handler';
 import React, { useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
-// StyleSheet imported above — used for hairlineWidth in tab bar
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -9,7 +8,9 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 
+import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { HabitsProvider, useHabits } from './src/context/HabitsContext';
+import AuthScreen from './src/screens/AuthScreen';
 import WelcomeScreen from './src/screens/WelcomeScreen';
 import OnboardingScreen from './src/screens/OnboardingScreen';
 import TodayScreen from './src/screens/TodayScreen';
@@ -31,7 +32,6 @@ const TAB_ICONS: Record<string, { active: IoniconsName; inactive: IoniconsName }
 
 function AppNavigator() {
   const { hasOnboarded, loaded } = useHabits();
-  // Local state: have they passed the Welcome screen this session?
   const [passedWelcome, setPassedWelcome] = useState(false);
 
   if (!loaded) {
@@ -42,7 +42,6 @@ function AppNavigator() {
     );
   }
 
-  // New user flow: Welcome → Onboarding → App
   if (!hasOnboarded) {
     if (!passedWelcome) {
       return <WelcomeScreen onGetStarted={() => setPassedWelcome(true)} />;
@@ -81,14 +80,34 @@ function AppNavigator() {
   );
 }
 
+function AppRoot() {
+  const { session, authLoading } = useAuth();
+
+  if (authLoading) {
+    return (
+      <View style={styles.loading}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+      </View>
+    );
+  }
+
+  if (!session) {
+    return <AuthScreen />;
+  }
+
+  return <AppNavigator />;
+}
+
 export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <HabitsProvider>
-          <StatusBar style="dark" />
-          <AppNavigator />
-        </HabitsProvider>
+        <AuthProvider>
+          <HabitsProvider>
+            <StatusBar style="dark" />
+            <AppRoot />
+          </HabitsProvider>
+        </AuthProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

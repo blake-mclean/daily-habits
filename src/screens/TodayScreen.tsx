@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import HabitCard from '../components/HabitCard';
 import AddHabitModal from '../components/AddHabitModal';
 import RewardModal from '../components/RewardModal';
+import LevelUpModal from '../components/LevelUpModal';
 import RetentionDashboard from '../components/RetentionDashboard';
 import SettingsScreen from './SettingsScreen';
 import { useHabits } from '../context/HabitsContext';
@@ -23,6 +24,7 @@ export default function TodayScreen() {
     habits, userName,
     isHabitComplete, getAllCompleteForDate,
     markChallengeDay, challenges, lastRewardDate, markRewardShown,
+    pendingLevelUp, clearLevelUp,
   } = useHabits();
 
   const [showAdd, setShowAdd] = useState(false);
@@ -121,6 +123,12 @@ export default function TodayScreen() {
 
       <AddHabitModal visible={showAdd} onClose={() => setShowAdd(false)} />
       <RewardModal visible={showReward} onClose={() => setShowReward(false)} />
+      <LevelUpModal
+        visible={pendingLevelUp !== null}
+        identityType={pendingLevelUp?.identityType ?? null}
+        newChapter={pendingLevelUp?.newChapter ?? 2}
+        onClose={clearLevelUp}
+      />
       <SettingsScreen visible={showSettings} onClose={() => setShowSettings(false)} />
     </SafeAreaView>
   );

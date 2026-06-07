@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useHabits } from '../context/HabitsContext';
+import { useAuth } from '../context/AuthContext';
 import { formatPrefTime } from '../utils/notifications';
 import { COLORS, RADIUS, SPACING } from '../theme';
 import DevScreen from './DevScreen';
@@ -25,6 +26,7 @@ interface Props {
 
 export default function SettingsScreen({ visible, onClose }: Props) {
   const { userName, setUserName, resetData, notifPrefs, futureSelfNudgesEnabled, toggleNudges } = useHabits();
+  const { signOut, user } = useAuth();
   const [nameInput, setNameInput] = useState(userName);
   const [showDev, setShowDev] = useState(false);
   const [showNotifSettings, setShowNotifSettings] = useState(false);
@@ -155,6 +157,40 @@ export default function SettingsScreen({ visible, onClose }: Props) {
               <View style={styles.rowContent}>
                 <Text style={[styles.rowTitle, { color: '#DC2626' }]}>Reset All Data</Text>
                 <Text style={styles.rowDesc}>Delete all habits and history permanently</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+
+          {/* Account */}
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionLabel}>Account</Text>
+          </View>
+          <View style={styles.card}>
+            {user && (
+              <>
+                <View style={[styles.row, { paddingBottom: 8 }]}>
+                  <View style={styles.rowContent}>
+                    <Text style={styles.rowTitle}>Signed in as</Text>
+                    <Text style={styles.rowDesc}>{user.email}</Text>
+                  </View>
+                </View>
+                <View style={styles.dividerRow} />
+              </>
+            )}
+            <TouchableOpacity
+              style={styles.row}
+              onPress={() =>
+                Alert.alert('Sign Out', 'Your data will sync automatically next time you sign in.', [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Sign Out', style: 'destructive', onPress: signOut },
+                ])
+              }
+            >
+              <View style={[styles.rowIcon, { backgroundColor: '#FEE2E2' }]}>
+                <Ionicons name="log-out-outline" size={20} color="#DC2626" />
+              </View>
+              <View style={styles.rowContent}>
+                <Text style={[styles.rowTitle, { color: '#DC2626' }]}>Sign Out</Text>
               </View>
             </TouchableOpacity>
           </View>

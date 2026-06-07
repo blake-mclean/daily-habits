@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer, useEffect } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { today, todayAsDate, subtractDay } from '../utils/dateHelpers';
 import { COLORS } from '../theme';
@@ -6,8 +6,10 @@ import { NotificationPref, DEFAULT_NOTIF_PREFS, scheduleReengagementNotification
 import { getTemplate } from '../data/challengeTemplates';
 import { runRetentionRecalc, RetentionState } from '../retention';
 import { MomentumTrend, MomentumHistoryEntry } from '../retention/momentum';
-import { IdentityType, inferIdentityType } from '../retention/identity';
+import { IdentityType, inferIdentityType, IDENTITY_TYPES, chapterFromXp } from '../retention/identity';
 import { FutureSelfCategory } from '../retention/futureSelf';
+import { supabase } from '../lib/supabase';
+import { pushToSupabase, pullFromSupabase, deleteHabitFromSupabase, SyncState } from '../lib/sync';
 
 export type HabitType = 'daily' | 'volume';
 
@@ -51,8 +53,8 @@ interface AppState {
   notifPrefs: NotificationPref[];
 
   // ── Retention system ────────────────────────────────────
-  momentumScore: number;          // display score (0-100)
-  momentumSettled: number;        // score settled through lastMomentumDate
+  momentumScore: number;
+  momentumSettled: number;
   momentumTrend: MomentumTrend;
   lastMomentumDate: string;
   momentumHistory: MomentumHistoryEntry[];
@@ -64,6 +66,9 @@ interface AppState {
   futureSelfNudgesEnabled: boolean;
   daysSinceLastCheckIn: number;
   reengagementScheduledDate: string;
+
+  // ── Ephemeral UI state (not persisted) ──────────────────
+  pendingLevelUp: { identityType: IdentityType; newChapter: number } | null;
 
   loaded: boolean;
 }
@@ -99,11 +104,12 @@ const initialState: AppState = {
   lastRewardDate: '',
   notifPrefs: DEFAULT_NOTIF_PREFS,
   ...RETENTION_DEFAULTS,
+  pendingLevelUp: null,
   loaded: false,
 };
 
 type Action =
-  | { type: 'LOAD'; payload: Omit<AppState, 'loaded'> }
+  | { type: 'LOAD'; payload: Omit<AppState, 'loaded' | 'pendingLevelUp'> }
   | { type: 'ADD_HABIT'; payload: Habit }
   | { type: 'DELETE_HABIT'; payload: string }
   | { type: 'LOG_HABIT'; payload: { habitId: string; date: string } }
@@ -118,12 +124,14 @@ type Action =
   | { type: 'SET_HABIT_REMINDER'; payload: { habitId: string; reminder?: { hour: number; minute: number } } }
   | { type: 'UPDATE_RETENTION'; payload: RetentionState & { reengagementScheduledDate?: string } }
   | { type: 'TOGGLE_NUDGES'; payload: boolean }
+  | { type: 'SET_PENDING_LEVEL_UP'; payload: { identityType: IdentityType; newChapter: number } }
+  | { type: 'CLEAR_LEVEL_UP' }
   | { type: 'RESET' };
 
 function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
     case 'LOAD':
-      return { ...state, ...action.payload, loaded: true };
+      return { ...state, ...action.payload, pendingLevelUp: null, loaded: true };
 
     case 'ADD_HABIT':
       return { ...state, habits: [...state.habits, action.payload] };
@@ -241,6 +249,12 @@ function reducer(state: AppState, action: Action): AppState {
     case 'TOGGLE_NUDGES':
       return { ...state, futureSelfNudgesEnabled: action.payload };
 
+    case 'SET_PENDING_LEVEL_UP':
+      return { ...state, pendingLevelUp: action.payload };
+
+    case 'CLEAR_LEVEL_UP':
+      return { ...state, pendingLevelUp: null };
+
     case 'RESET':
       return { ...initialState, loaded: true };
 
@@ -250,6 +264,36 @@ function reducer(state: AppState, action: Action): AppState {
 }
 
 const STORAGE_KEY = 'HABITS_APP_V2';
+
+function buildLoadPayload(data: Partial<Omit<AppState, 'loaded' | 'pendingLevelUp'>>): Omit<AppState, 'loaded' | 'pendingLevelUp'> {
+  return {
+    habits: ((data.habits ?? []) as Habit[]).map((h: Habit) => ({
+      ...h,
+      identityType: h.identityType ?? inferIdentityType(h.name),
+    })),
+    logs: (data.logs ?? []) as HabitLog[],
+    challenges: ((data.challenges ?? []) as Challenge[]).map((c: Challenge) =>
+      c.id === 'starter-challenge' ? { ...c, id: 'kickstart-3' } : c
+    ),
+    hasOnboarded: data.hasOnboarded ?? false,
+    userName: data.userName ?? '',
+    lastRewardDate: data.lastRewardDate ?? '',
+    notifPrefs: (data.notifPrefs as NotificationPref[]) ?? DEFAULT_NOTIF_PREFS,
+    momentumScore: data.momentumScore ?? 50,
+    momentumSettled: data.momentumSettled ?? 50,
+    momentumTrend: (data.momentumTrend as MomentumTrend) ?? 'stable',
+    lastMomentumDate: data.lastMomentumDate ?? subtractDay(today()),
+    momentumHistory: (data.momentumHistory as MomentumHistoryEntry[]) ?? [],
+    identityXpSnapshot: (data.identityXpSnapshot as Partial<Record<IdentityType, number>>) ?? {},
+    lastKnownChapter: data.lastKnownChapter ?? 0,
+    futureSelfText: data.futureSelfText ?? '',
+    futureSelfCategory: (data.futureSelfCategory as FutureSelfCategory) ?? 'stable',
+    futureSelfVariantIdx: (data.futureSelfVariantIdx as Partial<Record<string, number>>) ?? {},
+    futureSelfNudgesEnabled: data.futureSelfNudgesEnabled ?? true,
+    daysSinceLastCheckIn: data.daysSinceLastCheckIn ?? 0,
+    reengagementScheduledDate: data.reengagementScheduledDate ?? '',
+  };
+}
 
 interface ContextType extends AppState {
   addHabit: (h: Omit<Habit, 'id' | 'createdAt'>) => void;
@@ -269,6 +313,7 @@ interface ContextType extends AppState {
   setHabitReminder: (habitId: string, reminder?: { hour: number; minute: number }) => void;
   toggleNudges: (enabled: boolean) => void;
   resetData: () => Promise<void>;
+  clearLevelUp: () => void;
   getCurrentStreak: () => number;
   getBestStreak: () => number;
   getCompletionRate: (habitId: string) => number;
@@ -278,58 +323,76 @@ const HabitsContext = createContext<ContextType | null>(null);
 
 export function HabitsProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Prevents false level-up fires on the initial retention recalc after load
+  const retentionInitialized = useRef(false);
 
-  // ── Load from storage ───────────────────────────────────
+  // ── Load from AsyncStorage, then pull from Supabase ────
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY)
-      .then(raw => {
-        const data = raw ? JSON.parse(raw) : {};
-        const challenges: Challenge[] = (data.challenges ?? []).map((c: Challenge) =>
-          c.id === 'starter-challenge' ? { ...c, id: 'kickstart-3' } : c
-        );
-        dispatch({
-          type: 'LOAD',
-          payload: {
-            habits: (data.habits ?? []).map((h: Habit) => ({
-              ...h,
-              identityType: h.identityType ?? inferIdentityType(h.name),
-            })),
-            logs: data.logs ?? [],
-            challenges,
-            hasOnboarded: data.hasOnboarded ?? false,
-            userName: data.userName ?? '',
-            lastRewardDate: data.lastRewardDate ?? '',
-            notifPrefs: data.notifPrefs ?? DEFAULT_NOTIF_PREFS,
-            // Retention — use stored values; backfill defaults for existing users
-            momentumScore: data.momentumScore ?? 50,
-            momentumSettled: data.momentumSettled ?? 50,
-            momentumTrend: data.momentumTrend ?? 'stable',
-            lastMomentumDate: data.lastMomentumDate ?? subtractDay(today()),
-            momentumHistory: data.momentumHistory ?? [],
-            identityXpSnapshot: data.identityXpSnapshot ?? {},
-            lastKnownChapter: data.lastKnownChapter ?? 0,
-            futureSelfText: data.futureSelfText ?? '',
-            futureSelfCategory: data.futureSelfCategory ?? 'stable',
-            futureSelfVariantIdx: data.futureSelfVariantIdx ?? {},
-            futureSelfNudgesEnabled: data.futureSelfNudgesEnabled ?? true,
-            daysSinceLastCheckIn: data.daysSinceLastCheckIn ?? 0,
-            reengagementScheduledDate: data.reengagementScheduledDate ?? '',
-          },
-        });
-      })
-      .catch(() => dispatch({ type: 'LOAD', payload: { ...initialState } }));
+    const init = async () => {
+      const raw = await AsyncStorage.getItem(STORAGE_KEY).catch(() => null);
+      const localData = raw ? JSON.parse(raw) : {};
+      dispatch({ type: 'LOAD', payload: buildLoadPayload(localData) });
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        try {
+          const remote = await pullFromSupabase(session.user.id);
+          if (remote) {
+            dispatch({ type: 'LOAD', payload: buildLoadPayload({ ...localData, ...remote }) });
+          }
+        } catch {
+          // Use local data if remote pull fails
+        }
+      }
+    };
+
+    init();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' && session) {
+        const raw = await AsyncStorage.getItem(STORAGE_KEY).catch(() => null);
+        const localData = raw ? JSON.parse(raw) : {};
+        try {
+          const remote = await pullFromSupabase(session.user.id);
+          if (remote) {
+            dispatch({ type: 'LOAD', payload: buildLoadPayload({ ...localData, ...remote }) });
+          }
+        } catch {
+          // Keep local data on pull failure
+        }
+      } else if (event === 'SIGNED_OUT') {
+        retentionInitialized.current = false;
+        await AsyncStorage.removeItem(STORAGE_KEY).catch(() => {});
+        dispatch({ type: 'RESET' });
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Persist on any state change ─────────────────────────
+  // ── Persist to AsyncStorage + debounced Supabase sync ──
   useEffect(() => {
     if (!state.loaded) return;
-    const { loaded, ...data } = state;
+    // Exclude ephemeral fields from persistence
+    const { loaded, pendingLevelUp, ...data } = state;
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(data)).catch(() => {});
+
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    syncTimerRef.current = setTimeout(() => {
+      supabase.auth.getUser().then(({ data: { user } }) => {
+        if (user) pushToSupabase(user.id, data as SyncState).catch(() => {});
+      });
+    }, 5000);
   }, [state]);
 
-  // ── Retention recalc (on load and after log mutations) ──
+  // ── Retention recalc + level-up detection ──────────────
   useEffect(() => {
     if (!state.loaded) return;
+
+    const oldXpSnapshot = state.identityXpSnapshot;
+
     const patch = runRetentionRecalc({
       momentumSettled: state.momentumSettled,
       lastMomentumDate: state.lastMomentumDate,
@@ -343,11 +406,23 @@ export function HabitsProvider({ children }: { children: React.ReactNode }) {
     });
     dispatch({ type: 'UPDATE_RETENTION', payload: patch });
 
-    // Re-engagement push notification (one per gap, respects quiet hours)
-    if (
-      state.futureSelfNudgesEnabled &&
-      patch.daysSinceLastCheckIn >= 3
-    ) {
+    // Detect per-identity level-ups — skip the very first recalc to avoid
+    // false positives when loading existing data on app start.
+    if (retentionInitialized.current) {
+      for (const type of IDENTITY_TYPES) {
+        const oldXp = (oldXpSnapshot as Record<string, number>)[type] ?? 0;
+        const newXp = (patch.identityXpSnapshot as Record<string, number>)[type] ?? 0;
+        const oldChapter = chapterFromXp(oldXp);
+        const newChapter = chapterFromXp(newXp);
+        if (newChapter > oldChapter && newChapter > 1) {
+          dispatch({ type: 'SET_PENDING_LEVEL_UP', payload: { identityType: type, newChapter } });
+          break;
+        }
+      }
+    }
+    retentionInitialized.current = true;
+
+    if (state.futureSelfNudgesEnabled && patch.daysSinceLastCheckIn >= 3) {
       scheduleReengagementNotification({
         daysSince: patch.daysSinceLastCheckIn,
         userName: state.userName,
@@ -381,13 +456,17 @@ export function HabitsProvider({ children }: { children: React.ReactNode }) {
       ...h,
       id: `${Date.now()}-${Math.random()}`,
       createdAt: today(),
-      // Infer identity type if not provided
       identityType: h.identityType ?? inferIdentityType(h.name),
     };
     dispatch({ type: 'ADD_HABIT', payload: habit });
   };
 
-  const deleteHabit = (id: string) => dispatch({ type: 'DELETE_HABIT', payload: id });
+  const deleteHabit = (id: string) => {
+    dispatch({ type: 'DELETE_HABIT', payload: id });
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) deleteHabitFromSupabase(user.id, id).catch(() => {});
+    });
+  };
 
   const logHabit = (habitId: string, date = today()) =>
     dispatch({ type: 'LOG_HABIT', payload: { habitId, date } });
@@ -456,6 +535,8 @@ export function HabitsProvider({ children }: { children: React.ReactNode }) {
     await AsyncStorage.removeItem(STORAGE_KEY);
     dispatch({ type: 'RESET' });
   };
+
+  const clearLevelUp = () => dispatch({ type: 'CLEAR_LEVEL_UP' });
 
   // ── Streak helpers ──────────────────────────────────────
   const getCurrentStreak = (): number => {
@@ -526,6 +607,7 @@ export function HabitsProvider({ children }: { children: React.ReactNode }) {
         setHabitReminder,
         toggleNudges,
         resetData,
+        clearLevelUp,
         getCurrentStreak,
         getBestStreak,
         getCompletionRate,

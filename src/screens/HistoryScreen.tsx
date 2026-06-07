@@ -7,7 +7,8 @@ import { CARD_STYLE, COLORS, RADIUS, SPACING, TYPE } from '../theme';
 import { formatDisplayDate, getCalendarDaysForMonth, today, todayAsDate } from '../utils/dateHelpers';
 
 const { width: SCREEN_W } = Dimensions.get('window');
-const SIDE_PAD = SPACING.lg * 2;
+// SIDE_PAD must account for body padding + card internal padding + card borders
+const SIDE_PAD = SPACING.lg * 2 + SPACING.md * 2 + 2;
 const LABEL_W = 28;
 const GAP = 4;
 const CELL_SIZE = Math.floor((SCREEN_W - SIDE_PAD - LABEL_W - GAP * 6) / 7);
