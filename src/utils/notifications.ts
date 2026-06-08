@@ -125,7 +125,11 @@ export async function scheduleReengagementNotification(params: {
   await Notifications.scheduleNotificationAsync({
     identifier: 'reengagement-nudge',
     content: { title, body },
-    trigger: { seconds } as any,
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+      seconds,
+      repeats: false,
+    },
   });
 
   return todayStr;
@@ -135,6 +139,43 @@ export async function cancelReengagementNotification(): Promise<void> {
   try {
     await Notifications.cancelScheduledNotificationAsync('reengagement-nudge');
   } catch {}
+}
+
+export async function scheduleAICoachingNotification(
+  userName: string,
+  message: string
+): Promise<void> {
+  const granted = await requestNotificationPermission();
+  if (!granted) return;
+
+  try { await Notifications.cancelScheduledNotificationAsync('ai-coaching-nudge'); } catch {}
+
+  // Schedule for 3 PM today; if already past 3 PM, schedule for tomorrow
+  const now = new Date();
+  const target = new Date();
+  target.setHours(15, 0, 0, 0);
+  if (target <= now) target.setDate(target.getDate() + 1);
+
+  const seconds = Math.max(60, Math.round((target.getTime() - now.getTime()) / 1000));
+  const firstName = userName ? userName.trim().split(' ')[0] : '';
+
+  // Use the first sentence for the notification body so it fits the banner
+  const bodyMatch = message.match(/^[^.!?]+[.!?]/);
+  const body = bodyMatch ? bodyMatch[0].trim() : message.substring(0, 140);
+
+  await Notifications.scheduleNotificationAsync({
+    identifier: 'ai-coaching-nudge',
+    content: {
+      title: firstName ? `Hey ${firstName} 👋` : 'Your coaching nudge',
+      body,
+      sound: 'default',
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+      seconds,
+      repeats: false,
+    },
+  });
 }
 
 export function formatPrefTime(pref: NotificationPref): string {

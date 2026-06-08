@@ -128,22 +128,26 @@ export default function SettingsScreen({ visible, onClose }: Props) {
             </View>
           </View>
 
-          {/* Developer */}
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionLabel}>Developer</Text>
-          </View>
-          <View style={styles.card}>
-            <TouchableOpacity style={styles.row} onPress={() => setShowDev(true)}>
-              <View style={[styles.rowIcon, { backgroundColor: '#FEF3C7' }]}>
-                <Ionicons name="code-slash-outline" size={20} color={COLORS.gold} />
+          {/* Developer — only visible in dev builds */}
+          {__DEV__ && (
+            <>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionLabel}>Developer</Text>
               </View>
-              <View style={styles.rowContent}>
-                <Text style={styles.rowTitle}>Developer Tools</Text>
-                <Text style={styles.rowDesc}>Simulate dates, test rewards, reset data</Text>
+              <View style={styles.card}>
+                <TouchableOpacity style={styles.row} onPress={() => setShowDev(true)}>
+                  <View style={[styles.rowIcon, { backgroundColor: '#FEF3C7' }]}>
+                    <Ionicons name="code-slash-outline" size={20} color={COLORS.gold} />
+                  </View>
+                  <View style={styles.rowContent}>
+                    <Text style={styles.rowTitle}>Developer Tools</Text>
+                    <Text style={styles.rowDesc}>Simulate dates, test rewards, reset data</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color={COLORS.textMuted} />
+                </TouchableOpacity>
               </View>
-              <Ionicons name="chevron-forward" size={16} color={COLORS.textMuted} />
-            </TouchableOpacity>
-          </View>
+            </>
+          )}
 
           {/* Danger zone */}
           <View style={styles.sectionHeader}>

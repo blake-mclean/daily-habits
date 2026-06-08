@@ -27,7 +27,6 @@ export default function AddHabitModal({ visible, onClose }: Props) {
   const [emoji, setEmoji] = useState('🎯');
   const [type, setType] = useState<HabitType>('daily');
   const [targetCount, setTargetCount] = useState(1);
-  const [colorIndex, setColorIndex] = useState(0);
   const [identityType, setIdentityType] = useState<IdentityType>('disciplined');
   const [identityManuallySet, setIdentityManuallySet] = useState(false);
 
@@ -43,7 +42,6 @@ export default function AddHabitModal({ visible, onClose }: Props) {
     setEmoji('🎯');
     setType('daily');
     setTargetCount(1);
-    setColorIndex(0);
     setIdentityType('disciplined');
     setIdentityManuallySet(false);
   };
@@ -55,7 +53,7 @@ export default function AddHabitModal({ visible, onClose }: Props) {
       emoji,
       type,
       targetCount: type === 'daily' ? 1 : Math.max(1, targetCount),
-      color: COLORS.habitColors[colorIndex],
+      color: COLORS.primary,
       identityType,
     });
     reset();
@@ -173,20 +171,8 @@ export default function AddHabitModal({ visible, onClose }: Props) {
             })}
           </ScrollView>
 
-          {/* Color picker */}
-          <Text style={styles.label}>Color</Text>
-          <View style={styles.colorRow}>
-            {COLORS.habitColors.map((c, i) => (
-              <TouchableOpacity
-                key={c}
-                style={[styles.colorDot, { backgroundColor: c }, colorIndex === i && styles.colorDotActive]}
-                onPress={() => setColorIndex(i)}
-              />
-            ))}
-          </View>
-
           {/* Preview */}
-          <View style={[styles.preview, { borderLeftColor: COLORS.habitColors[colorIndex] }]}>
+          <View style={[styles.preview, { borderLeftColor: COLORS.primary }]}>
             <Text style={styles.previewEmoji}>{emoji}</Text>
             <Text style={styles.previewName}>{name || 'Your habit name'}</Text>
             {type === 'volume' && (
@@ -280,15 +266,6 @@ const styles = StyleSheet.create({
   },
   counterBtnText: { fontSize: 22, fontWeight: '600', color: COLORS.primary },
   counterValue: { fontSize: 24, fontWeight: '700', color: COLORS.text, minWidth: 60, textAlign: 'center' },
-  colorRow: { flexDirection: 'row', gap: 12, flexWrap: 'wrap' },
-  colorDot: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    borderWidth: 3,
-    borderColor: 'transparent',
-  },
-  colorDotActive: { borderColor: COLORS.text },
   preview: {
     flexDirection: 'row',
     alignItems: 'center',

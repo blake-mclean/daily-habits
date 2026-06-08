@@ -40,3 +40,6 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Supabase CLI temp files (contains project metadata, pooler URLs)
+supabase/.temp/

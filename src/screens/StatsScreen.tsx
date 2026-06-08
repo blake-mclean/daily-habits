@@ -100,10 +100,10 @@ export default function StatsScreen() {
                   <View style={styles.habitInfo}>
                     <Text style={styles.habitName} numberOfLines={1}>{habit.name}</Text>
                     <View style={styles.rateTrack}>
-                      <View style={[styles.rateFill, { width: `${rate}%` as any, backgroundColor: habit.color }]} />
+                      <View style={[styles.rateFill, { width: `${rate}%` as any, backgroundColor: COLORS.primary }]} />
                     </View>
                   </View>
-                  <Text style={[styles.rateLabel, { color: habit.color }]}>{rate}%</Text>
+                  <Text style={[styles.rateLabel, { color: COLORS.primary }]}>{rate}%</Text>
                 </View>
               );
             })}

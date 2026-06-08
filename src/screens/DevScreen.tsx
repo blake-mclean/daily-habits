@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Modal,
   ScrollView,
@@ -11,6 +12,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { getMockDateOffset, setMockDateOffset, today } from '../utils/dateHelpers';
 import { useHabits } from '../context/HabitsContext';
+import { fetchCoachingMessage, fetchReflection } from '../lib/aiCoaching';
+import * as Notifications from 'expo-notifications';
+import { scheduleAICoachingNotification } from '../utils/notifications';
 import { COLORS, RADIUS, SPACING } from '../theme';
 
 interface Props {
@@ -19,8 +23,11 @@ interface Props {
 }
 
 export default function DevScreen({ visible, onClose }: Props) {
-  const { resetData, logHabit, habits, markChallengeDay, challenges } = useHabits();
+  const { resetData, logHabit, habits, markChallengeDay, challenges, userName } = useHabits();
   const [offset, setOffset] = useState(getMockDateOffset());
+  const [aiLoading, setAiLoading] = useState<'coaching' | 'weekly' | 'monthly' | null>(null);
+  const [aiOutputs, setAiOutputs] = useState<{ coaching?: string; weekly?: string; monthly?: string }>({});
+  const [notifScheduled, setNotifScheduled] = useState(false);
 
   const updateOffset = (delta: number) => {
     const next = offset + delta;
@@ -62,6 +69,52 @@ export default function DevScreen({ visible, onClose }: Props) {
         },
       ]
     );
+  };
+
+  const testPushNotification = async () => {
+    try {
+      // Check / request permission first
+      const { status } = await Notifications.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission denied', 'Go to Settings > Notifications > your app and enable notifications.');
+        return;
+      }
+
+      const sample = aiOutputs.coaching ?? 'Water is locked in at 93%. Sleep is the one to focus on next at just 31%. Try a consistent lights-out time tonight and see how tomorrow feels.';
+      const body = sample.match(/^[^.!?]+[.!?]/)?.[0]?.trim() ?? sample.substring(0, 140);
+      const title = `Hey ${userName?.trim().split(' ')[0] ?? 'there'} 👋`;
+
+      try { await Notifications.cancelScheduledNotificationAsync('ai-coaching-nudge'); } catch {}
+
+      await Notifications.scheduleNotificationAsync({
+        identifier: 'ai-coaching-nudge',
+        content: { title, body, sound: 'default' },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+          seconds: 5,
+          repeats: false,
+        },
+      });
+
+      setNotifScheduled(true);
+      setTimeout(() => setNotifScheduled(false), 10000);
+    } catch (e) {
+      Alert.alert('Notification error', String(e));
+    }
+  };
+
+  const runAI = async (type: 'coaching' | 'weekly' | 'monthly') => {
+    setAiLoading(type);
+    try {
+      const result = type === 'coaching'
+        ? await fetchCoachingMessage(true)
+        : await fetchReflection(type === 'weekly' ? 'weekly' : 'monthly', true);
+      setAiOutputs(prev => ({ ...prev, [type]: result ?? '(no output returned)' }));
+    } catch (e) {
+      setAiOutputs(prev => ({ ...prev, [type]: `Error: ${String(e)}` }));
+    } finally {
+      setAiLoading(null);
+    }
   };
 
   const realDate = new Date();
@@ -155,6 +208,55 @@ export default function DevScreen({ visible, onClose }: Props) {
             </TouchableOpacity>
           </View>
 
+          {/* AI coaching test */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>AI Coaching Test</Text>
+            <Text style={styles.sectionDesc}>
+              Force-generate fresh messages from Claude. Bypasses cache. Requires a logged-in session and habits in the DB.
+            </Text>
+
+            {(['coaching', 'weekly', 'monthly'] as const).map(type => (
+              <View key={type} style={styles.aiRow}>
+                <TouchableOpacity
+                  style={[styles.actionBtn, aiLoading === type && styles.actionBtnDisabled]}
+                  onPress={() => runAI(type)}
+                  disabled={aiLoading !== null}
+                >
+                  {aiLoading === type
+                    ? <ActivityIndicator size="small" color={COLORS.primary} />
+                    : <Text style={styles.actionBtnText}>
+                        {type === 'coaching' ? 'Generate Coaching Nudge' : type === 'weekly' ? 'Generate Weekly Reflection' : 'Generate Monthly Reflection'}
+                      </Text>
+                  }
+                </TouchableOpacity>
+                {aiOutputs[type] && (
+                  <View style={styles.aiOutput}>
+                    <Text style={styles.aiOutputLabel}>
+                      {type === 'coaching' ? 'COACHING' : type === 'weekly' ? 'WEEKLY' : 'MONTHLY'}
+                    </Text>
+                    <Text style={styles.aiOutputText}>{aiOutputs[type]}</Text>
+                  </View>
+                )}
+              </View>
+            ))}
+          </View>
+
+          {/* Push notification test */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Push Notification Test</Text>
+            <Text style={styles.sectionDesc}>
+              Fires a push notification in 5 seconds. Close this screen first so you see it arrive. Uses the last generated coaching nudge as the message, or a sample if none generated yet.
+            </Text>
+            <TouchableOpacity style={styles.actionBtn} onPress={testPushNotification}>
+              <Text style={styles.actionBtnText}>Send Test Notification (5s delay)</Text>
+            </TouchableOpacity>
+            {notifScheduled && (
+              <View style={styles.notifConfirm}>
+                <Text style={styles.notifConfirmText}>Notification scheduled. Close this screen now.</Text>
+              </View>
+            )}
+          </View>
+
           {/* Danger zone */}
           <View style={[styles.section, styles.dangerSection]}>
             <Text style={[styles.sectionTitle, { color: '#DC2626' }]}>Danger Zone</Text>
@@ -241,6 +343,30 @@ const styles = StyleSheet.create({
   },
   actionBtnDisabled: { opacity: 0.5 },
   actionBtnText: { fontSize: 14, fontWeight: '700', color: COLORS.primary },
+  notifConfirm: {
+    backgroundColor: COLORS.successLight,
+    borderRadius: RADIUS.md,
+    padding: SPACING.sm,
+    borderWidth: 1,
+    borderColor: COLORS.success,
+  },
+  notifConfirmText: { fontSize: 13, color: '#166534', fontWeight: '600', textAlign: 'center' },
+  aiRow: { gap: 8 },
+  aiOutput: {
+    backgroundColor: COLORS.background,
+    borderRadius: RADIUS.md,
+    padding: SPACING.sm,
+    borderWidth: 1,
+    borderColor: COLORS.borderHard,
+    gap: 4,
+  },
+  aiOutputLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: COLORS.primary,
+    letterSpacing: 0.8,
+  },
+  aiOutputText: { fontSize: 13, color: COLORS.text, lineHeight: 19 },
   dangerBtn: {
     backgroundColor: '#FEE2E2',
     borderRadius: RADIUS.md,

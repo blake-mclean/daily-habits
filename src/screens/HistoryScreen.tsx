@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useHabits } from '../context/HabitsContext';
 import { CARD_STYLE, COLORS, RADIUS, SPACING, TYPE } from '../theme';
 import { formatDisplayDate, getCalendarDaysForMonth, today, todayAsDate } from '../utils/dateHelpers';
+import AIReflectionCard from '../components/AIReflectionCard';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 // SIDE_PAD must account for body padding + card internal padding + card borders
@@ -35,7 +36,7 @@ function Cell({
 }: {
   dateStr: string | null; state: CellState | null; selected: boolean; onPress: () => void;
 }) {
-  if (!dateStr || !state) return <View style={[styles.cell, { backgroundColor: 'transparent' }]} />;
+  if (!dateStr || !state) return <View style={{ width: CELL_SIZE, height: CELL_SIZE }} />;
   return (
     <TouchableOpacity
       style={[
@@ -175,6 +176,9 @@ export default function HistoryScreen() {
             ))}
           </View>
         )}
+
+        {/* AI reflection summary */}
+        <AIReflectionCard />
 
         <View style={{ height: 24 }} />
       </ScrollView>

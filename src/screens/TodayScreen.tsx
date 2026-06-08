@@ -14,6 +14,7 @@ import AddHabitModal from '../components/AddHabitModal';
 import RewardModal from '../components/RewardModal';
 import LevelUpModal from '../components/LevelUpModal';
 import RetentionDashboard from '../components/RetentionDashboard';
+import AICoachCard from '../components/AICoachCard';
 import SettingsScreen from './SettingsScreen';
 import { useHabits } from '../context/HabitsContext';
 import { COLORS, RADIUS, SPACING, TYPE } from '../theme';
@@ -96,6 +97,9 @@ export default function TodayScreen() {
       <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
         {/* Retention system dashboard */}
         <RetentionDashboard />
+
+        {/* AI coaching nudge */}
+        <AICoachCard userName={userName} />
 
         {habits.length === 0 ? (
           <View style={styles.empty}>
