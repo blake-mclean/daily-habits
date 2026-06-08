@@ -8,7 +8,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
 import { fetchCoachingMessage } from '../lib/aiCoaching';
 import { scheduleAICoachingNotification } from '../utils/notifications';
 import { CARD_STYLE, COLORS, RADIUS, SPACING, TYPE } from '../theme';
@@ -20,9 +20,10 @@ interface Props {
 }
 
 export default function AICoachCard({ userName }: Props) {
+  const { session } = useAuth();
+  const isAuthenticated = !!session?.user;
   const [status, setStatus] = useState<Status>('loading');
   const [message, setMessage] = useState<string | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const hasMessage = useRef(false);
@@ -47,12 +48,6 @@ export default function AICoachCard({ userName }: Props) {
       if (!hasMessage.current) setStatus('error');
     }
   }, [userName]);
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) setIsAuthenticated(true);
-    });
-  }, []);
 
   useEffect(() => {
     if (!isAuthenticated) return;

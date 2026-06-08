@@ -11,6 +11,13 @@ Deno.serve(async (req: Request) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
+  if (req.method !== "POST") {
+    return new Response(JSON.stringify({ error: "Method not allowed" }), {
+      status: 405,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   try {
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
@@ -40,14 +47,16 @@ Deno.serve(async (req: Request) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Rate limit: max 10 calls per hour per user
+    // Rate limit: max 3 calls per hour per user.
+    // Note: limit is intentionally tight (normal cadence is 1/hr via client TTL cache)
+    // to reduce blast radius of the non-atomic TOCTOU window inherent in DB-based checks.
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
     const { count: recentCalls } = await supabase
       .from("ai_coaching_messages")
       .select("id", { count: "exact", head: true })
       .eq("user_id", user.id)
       .gte("created_at", oneHourAgo);
-    if ((recentCalls ?? 0) >= 10) {
+    if ((recentCalls ?? 0) >= 3) {
       return new Response(JSON.stringify({ error: "Rate limit exceeded. Try again later." }), {
         status: 429,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

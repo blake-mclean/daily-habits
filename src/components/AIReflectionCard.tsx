@@ -9,7 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
 import { fetchReflection } from '../lib/aiCoaching';
 import { CARD_STYLE, COLORS, RADIUS, SPACING, TYPE } from '../theme';
 
@@ -17,10 +17,11 @@ type Period = 'weekly' | 'monthly';
 type Status = 'loading' | 'ready' | 'error';
 
 export default function AIReflectionCard() {
+  const { session } = useAuth();
+  const isAuthenticated = !!session?.user;
   const [period, setPeriod] = useState<Period>('weekly');
   const [status, setStatus] = useState<Status>('loading');
   const [message, setMessage] = useState<string | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const hasMessage = useRef(false);
@@ -42,12 +43,6 @@ export default function AIReflectionCard() {
     } catch {
       if (!hasMessage.current) setStatus('error');
     }
-  }, []);
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) setIsAuthenticated(true);
-    });
   }, []);
 
   useEffect(() => {

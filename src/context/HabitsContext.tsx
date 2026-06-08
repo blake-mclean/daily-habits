@@ -334,10 +334,10 @@ export function HabitsProvider({ children }: { children: React.ReactNode }) {
       const localData = raw ? JSON.parse(raw) : {};
       dispatch({ type: 'LOAD', payload: buildLoadPayload(localData) });
 
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
         try {
-          const remote = await pullFromSupabase(session.user.id);
+          const remote = await pullFromSupabase(user.id);
           if (remote) {
             dispatch({ type: 'LOAD', payload: buildLoadPayload({ ...localData, ...remote }) });
           }
